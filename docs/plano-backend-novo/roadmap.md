@@ -30,8 +30,10 @@ partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 > `docs/specs/features/cobranca-mora-e-documentos/v1/pre-refinement.md`; cada um cobre as fatias da
 > sua fase. A sub-partição da fatia 2 da F3 tem o seu próprio, em
 > `docs/specs/features/regua-e-documentos/v1/pre-refinement.md`, que é a **entrada dos dois runs**
-> (2a e 2b). Nenhum dos três é fatia executável, e por isso não aparecem no painel — nem no mapa
-> `FATIAS_DA_FASE` do gerador.
+> (2a e 2b). Nenhum dos três é fatia executável, e por isso **não** entram no painel, nos blocos de
+> fase nem no mapa `FATIAS_DA_FASE` do gerador. Desde 2026-09-09 eles aparecem em **Fora das oito
+> fases**, rotulados como *refinamento, sem execução* — visíveis sem serem contados como trabalho
+> pendente, que é a distinção que o mapa do gerador existe para preservar.
 
 ---
 
@@ -48,6 +50,7 @@ partir pelo mesmo motivo; quando isso acontecer, as fatias novas aparecem aqui.
 | **F5** | Integração bancária autônoma e automações | ✅ concluída | 21/21 tasks |
 | **F6** | Frontend religado — só o handoff sai daqui | ⬜ não iniciada | — |
 | **F7** | Virada e desinstalação — partida em duas | 🔄 em andamento | 1 de 2 fatias · 12/13 tasks |
+| _trilha_ | Cobrança pagável por Pix — boleto híbrido, Pix autônomo e comprovante | ⬜ não iniciada | — |
 <!-- PAINEL:FIM -->
 
 <!-- RODAPE:INICIO -->
@@ -411,6 +414,75 @@ nela se corrige como correção; **não reabre a construção do backend**.
 
 ---
 
+## Trilha Pix — cobrança pagável por Pix
+
+**Não é uma fase.** As oito fases são o plano de migração, e ele fechou — o marco de entrega está
+7/7. Esta é **construção nova além do marco**, decidida pelo usuário em 2026-09-09, e por isso ganha
+uma *trilha*: mesma mecânica de acompanhamento, sem fingir que o plano de migração cresceu.
+
+O pré-refinamento está em `docs/specs/features/cobranca-pagavel-por-pix/v1/pre-refinement.md`, e ele
+converge para **duas fatias independentes**, nesta ordem:
+
+### Fase A — `boleto-hibrido-e-comprovante/v1`
+
+Restaura a paridade com o legado que a virada da F7 derrubou sem que ninguém escriturasse: o boleto
+volta a nascer com **QR Pix vinculado**. Entrega junto o **meio de recebimento** derivado, a
+**instituição recebedora** e o **comprovante de pagamento em PDF**, que hoje não existe. Vai a
+produção **sozinha** e não depende da Fase B. ~7 tasks.
+
+⚠️ **O meio do QR híbrido é `BOLETO`** — decisão do usuário: o discriminador é o instrumento
+liquidado, não o app que o pagador usou.
+
+### Fase B — `cobranca-pix/v1`
+
+Pix **sem boleto por trás**: `txid` próprio, cobrança com vencimento, webhook Pix e varredura como
+rede. Exige **emenda à ADR-0001** e move o catálogo de permissões. ~16 tasks, sete delas bloqueadas
+por medição contra a conta real do banco.
+
+⚠️ **Pré-requisitos que não são código, e sem os quais nem a Fase A sai do lugar:** certificado
+`.pfx` renovado (o conhecido venceu em 2026-08-22), ao menos uma empresa cadastrada na base de
+produção e a chave Pix registrada.
+
+<!-- ESTADO:PIX:INICIO -->
+> ⬜ **não iniciada**
+>
+> ⬜ `boleto-hibrido-e-comprovante/v1`
+> ⬜ `cobranca-pix/v1`
+<!-- ESTADO:PIX:FIM -->
+
+---
+
+## Fora das oito fases
+
+As oito fases acima são o **plano de migração**, e o mapa delas é mantido à mão no gerador. Este
+bloco é o **complemento** dele: tudo o que existe em `docs/specs/features/` e não está naquele mapa.
+Ele é gerado por diferença sobre o disco, de modo que **nada fica invisível** — fatia nova aparece
+aqui sozinha, sem ninguém editar script nenhum.
+
+Três coisas caem aqui, e a distinção é de quem lê, não do gerador:
+
+- **Construção posterior ao marco de entrega**, que está 7/7. É o caso da integração Pix.
+- **Fatias do backend Frappe antigo**, que não são deste plano — a seção logo abaixo as nomeia.
+- ⚠️ **Fatia que DEVERIA estar numa fase e ninguém enumerou.** Este é o caso acionável: a correção é
+  acrescentá-la ao mapa `FATIAS_DA_FASE` do gerador e escrever a prosa dela na seção da fase.
+
+> **Por que este bloco existe.** Até 2026-09-09 fatia fora do mapa era omitida **em silêncio** — o
+> gancho disparava, o gerador saía com sucesso e o painel não a mencionava. A história do
+> repositório mede o custo: três commits de correção, cada um porque uma fatia ficou fora do painel
+> até alguém reparar. Na medição que originou este bloco, `painel-master-administradores/v1` estava
+> **concluída, com 7 tasks, e nunca havia aparecido aqui.**
+
+<!-- FORA-DAS-FASES:INICIO -->
+> **9 fatias com execução registrada · 8 diretórios em refinamento**
+>
+> **Em andamento ou pendentes** — nenhuma
+>
+> ✅ **concluídas (9):** `contencao-credencial-exposta/v2-debits` · `contencao-credencial-exposta/v3-debits` · `integracao-bancaria-configuravel/v1` · `integracao-bancaria-configuravel/v2-debits` · `integracao-bancaria-configuravel/v3` · `integracao-bancaria-configuravel/v4-debits` · `integracao-bancaria-configuravel/v5` · `integracao-bancaria-configuravel/v6-debits` · `painel-master-administradores/v1`
+> 📄 **refinamento, sem execução (8):** `backend-nativo-sysloc/v1` · `caracterizacao-regras-legadas/v1` · `cobranca-mora-e-documentos/v1` · `cobranca-pagavel-por-pix/v1` · `contencao-credencial-exposta/v1` · `dominio-locacao/v1` · `integracao-bancaria-sicoob/v1` · `regua-e-documentos/v1`
+<!-- FORA-DAS-FASES:FIM -->
+
+---
+
 ## Onde a construção deste repositório termina
 
 O **marco de entrega do backend** não é a F7 inteira — é a F1–F5 concluídas, mais a superfície da API
@@ -444,8 +516,17 @@ bash deploy/scripts/roadmap/atualizar-roadmap.sh
 ```
 
 Ele lê o `_run/*state.yaml` de cada fatia — que é escrito pelo próprio pipeline ao fechar uma task —
-e reescreve **apenas** o conteúdo entre os marcadores `<!-- PAINEL -->`, `<!-- ESTADO:Fn -->` e
-`<!-- RODAPE -->`. A prosa nunca é tocada, então rodar duas vezes é inofensivo.
+e reescreve **apenas** o conteúdo entre os marcadores `<!-- PAINEL -->`, `<!-- ESTADO:Fn -->`,
+`<!-- FORA-DAS-FASES -->` e `<!-- RODAPE -->`. A prosa nunca é tocada, então rodar duas vezes é
+inofensivo.
+
+**Ele roda sozinho.** Um gancho `PostToolUse` (`deploy/scripts/roadmap/gancho-roadmap.sh`,
+registrado em `.claude/settings.json`) o dispara sempre que um `_run/*state.yaml` é escrito — isto
+é, a cada task fechada, e portanto ao fim de todo run. Qualquer outro arquivo passa em silêncio.
+O gancho **nunca** interrompe o fluxo: erro dele sai como aviso, com código 0.
+
+**A bateria é `bash deploy/scripts/roadmap/verificar-roadmap.sh`** — 6 casos (`CT-1292` a
+`CT-1297`), sem privilégio e sem rede, contra raiz sintética descartável.
 
 **Fatia nova numa fase?** Acrescente-a ao mapa `FATIAS_DA_FASE` no topo do script, separada por `;`,
 e escreva a prosa dela na seção da fase. Fatia que ainda não existe no disco é reportada como não

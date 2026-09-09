@@ -5,7 +5,7 @@
 # ## O que este script faz, e o que ele deliberadamente NÃO faz
 #
 # Ele reescreve **apenas** os blocos delimitados por marcadores no `roadmap.md`: o painel de
-# progresso e a linha de estado de cada fase. Toda a prosa — o que cada fase é, o que entrega, por
+# progresso, a linha de estado de cada fase e o bloco do que está **fora** das oito fases. Toda a prosa — o que cada fase é, o que entrega, por
 # que foi fatiada assim — fica fora dos marcadores e **nunca** é tocada. A separação é o que permite
 # rodar isto quantas vezes for preciso sem risco de perder texto escrito à mão.
 #
@@ -56,6 +56,31 @@ declare -A FATIAS_DA_FASE=(
 
 FASES=(F0 F1 F2 F3 F4 F5 F6 F7)
 
+# --------------------------------------------------------------------------- #
+# TRILHAS — trabalho declarado que NÃO pertence às oito fases
+# --------------------------------------------------------------------------- #
+#
+# As oito fases são o plano de migração, e ele fechou: o marco de entrega está 7/7. O que se
+# constrói depois disso não tem fase, e por isso ganha **trilha** — mesma mecânica, nome próprio.
+#
+# ⚠️ **Isto NÃO é a segunda lista que `fatias_fora_das_fases` recusa.** A distinção é o que cada
+# uma resolve, e elas são problemas opostos:
+#
+#   · a descoberta por diferença resolve *"o que EXISTE não pode ficar invisível"*;
+#   · a declaração resolve *"o que foi DECIDIDO e ainda não existe precisa aparecer"*.
+#
+# Descoberta não alcança o segundo — não há diretório para achar. É a mesma razão pela qual
+# `frontend-religado/v1` mora no mapa da F6 sem existir no disco: o gerador a reporta como não
+# iniciada, que é a informação correta. Fatia declarada aqui sai do bloco de descoberta por
+# construção (`fatias_enumeradas` varre os dois), de modo que não há dupla contagem.
+declare -A TRILHAS=(
+  [PIX]='Cobrança pagável por Pix — boleto híbrido, Pix autônomo e comprovante'
+)
+
+FATIAS_DA_FASE[PIX]='boleto-hibrido-e-comprovante/v1;cobranca-pix/v1'
+
+NOMES_DAS_TRILHAS=(PIX)
+
 # ---------------------------------------------------------------------------- #
 # Leitura de estado — uma fatia
 # ---------------------------------------------------------------------------- #
@@ -97,6 +122,56 @@ ler_fatia() {
     in_progress) echo "em_andamento|$concluidas|$total" ;;
     *) echo "especificada|$concluidas|$total" ;;
   esac
+}
+
+# Verdadeiro quando a fatia tem estado de pipeline no disco — isto é, quando ela chegou a ser
+# executada. É o que separa **fatia** de **material de refinamento**, e a distinção não pode sair do
+# nome: `dominio-locacao` e `integracao-bancaria-sicoob` parecem fatia e são pré-refinamento de fase
+# partida. O disco responde; o nome, não.
+tem_estado_de_pipeline() {
+  local caminho="$FEATURES/$1"
+  [[ -n "$(find "$caminho/_run" -maxdepth 1 -name '*state.yaml' 2>/dev/null | head -1)" ]]
+}
+
+# Ecoa, uma por linha, toda fatia enumerada em FATIAS_DA_FASE.
+fatias_enumeradas() {
+  local grupo lista
+  for grupo in "${FASES[@]}" "${NOMES_DAS_TRILHAS[@]}"; do
+    IFS=';' read -r -a lista <<<"${FATIAS_DA_FASE[$grupo]}"
+    printf '%s\n' "${lista[@]}"
+  done
+}
+
+# Ecoa, uma por linha e em ordem, toda fatia que existe no disco e **não** está na enumeração.
+#
+# ## Por que por DIFERENÇA, e não por uma segunda lista
+#
+# A enumeração acima cobre as oito fases do plano de migração, e ela é mantida à mão por uma razão
+# escrita no docblock dela — diretório de pré-refinamento parece fatia e não é. O que ela não cobre é
+# **tudo o mais**: a fatia do backend Frappe antigo, e agora a construção posterior ao marco de
+# entrega, que está 7/7. Fatia nessa condição era invisível **em silêncio**: o gancho disparava, este
+# script saía com sucesso, e o painel simplesmente não a mencionava.
+#
+# A história do repositório mede o custo disso — três commits de correção (`inclui a fatia
+# publicacao-e-backup`, `ensina o gerador a ver as sub-fatias da F3`, `parte a F5 em duas`), cada um
+# porque uma fatia ficou fora do painel até alguém reparar. Medido em 2026-09-09, a fatia
+# `painel-master-administradores/v1` estava **concluída** e nunca havia aparecido.
+#
+# Uma segunda lista à mão repetiria o defeito com outro nome. O complemento não: fatia nova entra
+# sozinha, e esquecer de enumerá-la numa fase deixa de escondê-la — passa a exibi-la aqui, que é o
+# sintoma visível de que o mapa da fase precisa de uma entrada.
+fatias_fora_das_fases() {
+  local enumeradas caminho fatia
+  enumeradas="$(fatias_enumeradas | sort -u)"
+
+  for caminho in "$FEATURES"/*/*/; do
+    [[ -d "$caminho" ]] || continue
+    fatia="$(basename "$(dirname "$caminho")")/$(basename "$caminho")"
+    if grep -qxF "$fatia" <<<"$enumeradas"; then
+      continue
+    fi
+    printf '%s\n' "$fatia"
+  done | sort
 }
 
 # ---------------------------------------------------------------------------- #
@@ -170,6 +245,16 @@ painel() {
     printf '| **%s** | %s | %s %s | %s |\n' \
       "$fase" "${resumo[$fase]}" "$simbolo" "$rotulo" "${detalhe:-—}"
   done
+
+  # As trilhas entram na mesma tabela e com a coluna de fase marcada como *trilha*, não como
+  # número de fase: numerá-las como F8 diria que o plano de migração cresceu, e ele não cresceu.
+  local trilha
+  for trilha in "${NOMES_DAS_TRILHAS[@]}"; do
+    local simbolo rotulo detalhe
+    IFS='|' read -r simbolo rotulo detalhe <<<"$(estado_da_fase "$trilha")"
+    printf '| _trilha_ | %s | %s %s | %s |\n' \
+      "${TRILHAS[$trilha]}" "$simbolo" "$rotulo" "${detalhe:-—}"
+  done
 }
 
 linha_de_estado() {
@@ -202,6 +287,68 @@ linha_de_estado() {
   done
 }
 
+# Bloco do que existe no disco e está fora das oito fases.
+#
+# O eixo aqui é **estado**, não procedência — e a escolha é deliberada. Dizer *o que uma fatia é*
+# (do plano novo, do Frappe antigo, posterior ao marco) é trabalho da prosa, que fica fora dos
+# marcadores e é escrita por gente. Dizer *em que estado ela está* é trabalho deste script. Agrupar
+# por procedência exigiria uma segunda enumeração à mão — exatamente o defeito que esta seção existe
+# para fechar.
+bloco_fora_das_fases() {
+  local fatia linha estado concluidas total
+  local pendentes=() concluidas_lista=() refinamento=()
+
+  while IFS= read -r fatia; do
+    [[ -n "$fatia" ]] || continue
+
+    if ! tem_estado_de_pipeline "$fatia"; then
+      refinamento+=("$fatia")
+      continue
+    fi
+
+    linha="$(ler_fatia "$fatia")"
+    IFS='|' read -r estado concluidas total <<<"$linha"
+
+    if [[ "$estado" == 'concluida' ]]; then
+      concluidas_lista+=("$fatia")
+    else
+      local marca='📋'
+      [[ "$estado" == 'em_andamento' ]] && marca='🔄'
+      if [[ "$total" -gt 0 ]]; then
+        pendentes+=("$marca \`$fatia\` — $concluidas/$total tasks")
+      else
+        pendentes+=("$marca \`$fatia\`")
+      fi
+    fi
+  done < <(fatias_fora_das_fases)
+
+  local com_execucao=$(( ${#concluidas_lista[@]} + ${#pendentes[@]} ))
+  printf '> **%s fatias com execução registrada · %s diretórios em refinamento**\n>\n' \
+    "$com_execucao" "${#refinamento[@]}"
+
+  # As pendentes vêm primeiro e uma por linha: são as únicas que pedem ação.
+  if [[ "${#pendentes[@]}" -gt 0 ]]; then
+    printf '> **Em andamento ou pendentes**\n>\n'
+    printf '> %s\n' "${pendentes[@]}"
+  else
+    printf '> **Em andamento ou pendentes** — nenhuma\n'
+  fi
+  printf '>\n'
+
+  # Concluídas e refinamento vão adensadas: são registro, não pauta.
+  if [[ "${#concluidas_lista[@]}" -gt 0 ]]; then
+    printf '> ✅ **concluídas (%s):** ' "${#concluidas_lista[@]}"
+    printf '`%s` · ' "${concluidas_lista[@]::${#concluidas_lista[@]}-1}"
+    printf '`%s`\n' "${concluidas_lista[-1]}"
+  fi
+
+  if [[ "${#refinamento[@]}" -gt 0 ]]; then
+    printf '> 📄 **refinamento, sem execução (%s):** ' "${#refinamento[@]}"
+    printf '`%s` · ' "${refinamento[@]::${#refinamento[@]}-1}"
+    printf '`%s`\n' "${refinamento[-1]}"
+  fi
+}
+
 # Substitui o conteúdo entre `<!-- MARCA:INICIO -->` e `<!-- MARCA:FIM -->` pelo stdin.
 substituir_bloco() {
   local marca="$1" conteudo="$2" temporario
@@ -232,6 +379,15 @@ main() {
     linha_de_estado "$fase" >"$temporario"
     substituir_bloco "ESTADO:$fase" "$temporario"
   done
+
+  local trilha
+  for trilha in "${NOMES_DAS_TRILHAS[@]}"; do
+    linha_de_estado "$trilha" >"$temporario"
+    substituir_bloco "ESTADO:$trilha" "$temporario"
+  done
+
+  bloco_fora_das_fases >"$temporario"
+  substituir_bloco 'FORA-DAS-FASES' "$temporario"
 
   printf '_Painel gerado por `deploy/scripts/roadmap/atualizar-roadmap.sh` — não edite à mão._\n' \
     >"$temporario"
