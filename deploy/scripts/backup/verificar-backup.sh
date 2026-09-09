@@ -353,6 +353,7 @@ readonly BATERIAS_DECLARADAS=(
 	instalacao/verificar-unidades-agendadas.sh
 	instalacao/verificar-workspace.sh
 	publicacao/verificar-rotas-publicadas.sh
+	roadmap/verificar-roadmap.sh
 )
 
 # --------------------------------------------------------------------------- #
@@ -400,6 +401,7 @@ readonly CASOS_DECLARADOS_POR_BATERIA=(
 	"instalacao/verificar-unidades-agendadas.sh|8|CT-1146;CT-1147;CT-1148;CT-1149;CT-1150;CT-1151;CT-1152;CT-1154"
 	"instalacao/verificar-workspace.sh|4|CT-001;CT-002;CT-003;CT-004"
 	"publicacao/verificar-rotas-publicadas.sh|5|CT-1251;CT-1252;CT-1253;CT-1254;CT-1255"
+	"roadmap/verificar-roadmap.sh|7|CT-1292;CT-1293;CT-1294;CT-1295;CT-1296;CT-1297;CT-1298"
 )
 
 # A soma das quantidades acima. Escrita à parte porque é o CONTROLE ANTIVÁCUO do
@@ -412,7 +414,12 @@ readonly CASOS_DECLARADOS_POR_BATERIA=(
 # entram aqui no mesmo diff que os publica — número narrativo que fica para trás
 # convida a próxima task a "corrigir" a âncora executável para o valor errado.
 # **Não reponha o 24 nem o 116.**
-readonly CASOS_DECLARADOS_NO_TOTAL=126
+# ⚠️ 126 → 133 em 2026-09-09, com os SETE casos de `roadmap/verificar-roadmap.sh`
+# entrando na tabela acima — a bateria do gerador do roadmap, CT-1292 a CT-1298.
+# Ela nasceu como a 16ª e foi declarada nas TRÊS constantes no mesmo diff, que é
+# exatamente o que o comentário de `BATERIAS_DECLARADAS` exige. **Não reponha o
+# 126.**
+readonly CASOS_DECLARADOS_NO_TOTAL=133
 
 # --------------------------------------------------------------------------- #
 # O teto de frescor da cópia do dia — CT-1122.
