@@ -223,6 +223,33 @@ fatia reaberta.
   modo que o gerador reemitiu o delta dela dentro da `0029`. A supressão foi feita e documentada no
   cabeçalho, no molde da `0026`; **o débito NÃO se extingue com o gatilho**, e volta idêntico na
   próxima regeração.
+  ⚠️ **ELA FOI APLICADA E PROVADA NO HOST em 2026-09-09, e essa distinção é a lição que já custou
+  doze dias**: código provado não é ambiente provado. As `0029` e `0030` foram aplicadas ao banco
+  durável (`CRIADO` nas duas, com as demais em `JA-OK`), a API e o worker foram reiniciados, e
+  `verificar-rotas-publicadas.sh` saiu **5/5, zero falhas, zero degradações** — com a linha de
+  prontidão aguardando por **condição observada** até a tentativa 4, nunca por `sleep` suposto.
+  ⚠️ **A medição do efeito é o par ANTES/DEPOIS**: **21** linhas `rotina agendada parada` nas duas
+  horas anteriores ao reinício, e **0** depois. E o discriminador que fecha o desenho, consultado no
+  banco: **3 batimentos e 0 histórico** — as três rotinas publicadas passaram e bateram o relógio,
+  e **nenhuma** gravou histórico, porque nenhuma tinha trabalho. Se o histórico viesse maior que
+  zero, a correção teria virado *"gravar tudo"*.
+  ⚠️ **As duas DIÁRIAS continuaram alarmando até rodarem, e isso é CORRETO, não defeito residual**:
+  logo após o reinício só o `AVISO_DE_COBRANCA` saiu do alarme, porque ele é de minuto e já batera;
+  `ENCERRAMENTO_DE_CONTRATOS` (00:02) e `CONFERENCIA_DE_LIQUIDACAO` (03:00) ainda não haviam
+  passado, e do ponto de vista do batimento de fato não tinham. Disparadas à mão, as duas bateram e
+  o alarme foi a zero. **Não leia esse intervalo como correção incompleta.**
+  ⚠️ **`verificar-migracao.sh` NÃO se roda neste host, e a recusa dele é a guarda funcionando**: ele
+  **cria e remove um banco** no agrupamento, e a ADR-0006 o proíbe contra a instalação que atende a
+  operação — `/etc/sysloc/producao` é a marca disso. A conferência correta aqui é a consulta ao
+  catálogo (`\d`, `relrowsecurity`/`relforcerowsecurity`, `pg_policy`), e ela mostrou as duas
+  restrições únicas, a chave estrangeira, `FORCE` ativo nas **duas** colunas e a política com
+  `USING` **e** `WITH CHECK`. A bateria segue válida contra instância efêmera, que é onde os 309
+  casos do `db` a exercitam.
+  ⚠️ **`pnpm` NÃO é alcançável por `sudo -u sysloc bash -lc`** — medido: o `PATH` do login não
+  carrega o `mise`, e o binário vive em
+  `/home/sysloc/.local/share/mise/installs/pnpm/11.18.0/pnpm`. É a **segunda** vez que esta pedra
+  aparece (a primeira foi no script `04` da virada, em 2026-09-08). O build roda como o usuário
+  `sysloc` **sem** `sudo`, que é o caminho que funciona.
   ⚠️ **Três pacotes se moveram na VIRADA DA F7**, em 2026-09-08, e os deltas são **+4** (`db`),
   **+4** (`documentos`) e **+5** (`regua`) — total **+13**, de 2138. Ela é a execução da virada:
   o aplicativo do cliente passou a falar com o backend novo, o Frappe foi **desativado por
